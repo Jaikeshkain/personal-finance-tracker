@@ -18,7 +18,10 @@ import {
   CreditCard, 
   Target, 
   FileText, 
-  Settings as SettingsIcon 
+  Settings as SettingsIcon,
+  CheckCircle,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
 import { MonthlyFinanceData, Expense, Fund } from '@/types';
 
@@ -29,6 +32,20 @@ export default function Home() {
   // User Authentication States
   const [user, setUser] = useState<string | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
   
   // Scroll Tracking States
   const [scrollProgress, setScrollProgress] = useState<number>(0);
@@ -176,8 +193,8 @@ export default function Home() {
  
     checkConnectionAndSession();
  
-    // Register service worker for Progressive Web App capabilities
-    if ('serviceWorker' in navigator) {
+    // Register service worker only in production mode
+    if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').then(
           (registration) => {
@@ -187,6 +204,17 @@ export default function Home() {
             console.error('PWA ServiceWorker registration failed:', err);
           }
         );
+      });
+    } else if ('serviceWorker' in navigator) {
+      // In development mode, unregister any active service worker to prevent infinite caching loops
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) {
+          registration.unregister().then((success) => {
+            if (success) {
+              console.log('Stale PWA ServiceWorker unregistered successfully.');
+            }
+          });
+        }
       });
     }
   }, []);
@@ -266,7 +294,7 @@ export default function Home() {
   }, [activeMonthYear, user]);
 
   // Save changes (from children controllers)
-  const handleSaveData = async (updatedFields: Partial<MonthlyFinanceData>) => {
+  const handleSaveData = async (updatedFields: Partial<MonthlyFinanceData>, silent = false) => {
     if (!activeData || !user) return;
     
     const updated = {
@@ -285,6 +313,36 @@ export default function Home() {
     setLocalDatabase(newDb);
     localStorage.setItem('local_finance_db', JSON.stringify(newDb));
 
+    if (!silent) {
+      if ('categories' in updatedFields) {
+        const oldCategories = activeData.categories || [];
+        const newCategories = updatedFields.categories || [];
+        if (newCategories.length > oldCategories.length) {
+          showToast("Category added successfully!", "success");
+        } else if (newCategories.length < oldCategories.length) {
+          showToast("Category deleted successfully!", "success");
+        } else {
+          showToast("Categories updated successfully!", "success");
+        }
+      } else if ('expenses' in updatedFields) {
+        const oldExpenses = activeData.expenses || [];
+        const newExpenses = updatedFields.expenses || [];
+        if (newExpenses.length > oldExpenses.length) {
+          showToast("Expense logged successfully!", "success");
+        } else if (newExpenses.length < oldExpenses.length) {
+          showToast("Expense deleted successfully!", "success");
+        } else {
+          showToast("Expenses updated successfully!", "success");
+        }
+      } else if ('funds' in updatedFields) {
+        showToast("Savings goals updated successfully!", "success");
+      } else if ('income' in updatedFields) {
+        showToast("Salary updated successfully!", "success");
+      } else {
+        showToast("Changes saved successfully!", "success");
+      }
+    }
+
     // Save to Remote MongoDB if connected
     if (!isLocalMode) {
       try {
@@ -300,6 +358,7 @@ export default function Home() {
       } catch (err) {
         console.error('Failed to sync changes with MongoDB:', err);
         setIsLocalMode(true); // Fallback to local indicator
+        showToast("Database offline. Saved locally.", "info");
       }
     }
   };
@@ -313,8 +372,8 @@ export default function Home() {
   // Utilities: Populate Sample Data
   const handlePopulateMockData = () => {
     const starter = getStarterData(activeMonthYear);
-    handleSaveData(starter);
-    alert('Mock starter data populated for ' + activeMonthYear);
+    handleSaveData(starter, true);
+    showToast(`Sample mock data populated for ${activeMonthYear}!`, "success");
   };
 
   // Utilities: Hard Reset Database
@@ -344,7 +403,7 @@ export default function Home() {
         }
       }
 
-      alert('Database reset successful.');
+      showToast("Database reset successful.", "success");
     }
   };
 
@@ -366,6 +425,7 @@ export default function Home() {
         setActiveData(backupObj[months[0]]);
       }
     }
+    showToast("Backup imported successfully!", "success");
   };
 
   // View Router
@@ -520,7 +580,7 @@ export default function Home() {
       {/* Main Panel View */}
       <main 
         onScroll={handleScroll}
-        className="main-content flex-1 h-auto lg:h-screen pt-20 lg:pt-8 relative overflow-x-hidden"
+        className="main-content flex-1 relative overflow-x-hidden"
       >
         {/* Dynamic Parallax Glow Backgrounds */}
         <div 
@@ -576,6 +636,22 @@ export default function Home() {
           );
         })}
       </nav>
+
+      {/* Dynamic Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl border backdrop-blur-md shadow-lg shadow-black/60 animate-fade-in-up transition-all duration-300 font-outfit ${
+          toast.type === 'success' 
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+            : toast.type === 'error'
+            ? 'bg-red-500/10 border-red-500/20 text-red-400'
+            : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+        }`}>
+          {toast.type === 'success' && <CheckCircle size={16} />}
+          {toast.type === 'error' && <AlertTriangle size={16} />}
+          {toast.type === 'info' && <Info size={16} />}
+          <span className="text-xs font-bold uppercase tracking-wider">{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

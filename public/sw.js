@@ -29,6 +29,11 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Bypass service worker caching entirely in local development
+  if (event.request.url.includes('localhost') || event.request.url.includes('127.0.0.1')) {
+    return;
+  }
+
   // Let the browser handle standard API requests directly, only cache static files
   if (event.request.url.includes('/api/')) {
     return;

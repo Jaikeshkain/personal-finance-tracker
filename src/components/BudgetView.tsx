@@ -77,7 +77,12 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   };
 
   const handleDeleteCategory = (id: string) => {
-    setCategories(prev => prev.filter(c => c.id !== id));
+    const updatedCats = categories.filter(c => c.id !== id);
+    setCategories(updatedCats);
+    onSave({
+      income,
+      categories: updatedCats
+    });
   };
 
   const handleAddCategory = (e: React.FormEvent) => {
@@ -93,7 +98,14 @@ const BudgetView: React.FC<BudgetViewProps> = ({
       color: newCatColor
     };
 
-    setCategories(prev => [...prev, newCategory]);
+    const updatedCats = [...categories, newCategory];
+    setCategories(updatedCats);
+    
+    // Automatically sync changes to parent (and database) immediately
+    onSave({
+      income,
+      categories: updatedCats
+    });
     
     // Reset form
     setNewCatName('');
