@@ -9,23 +9,34 @@ import {
   CheckCircle, 
   AlertTriangle,
   Info,
-  Layers
+  Layers,
+  Download,
+  User,
+  LogOut
 } from 'lucide-react';
 
 interface SettingsViewProps {
+  user: string | null;
+  onLogout: () => void;
   isLocalMode: boolean;
   onPopulateMockData: () => void;
   onResetData: () => void;
   currency: string;
   setCurrency: (sym: string) => void;
+  isInstallable?: boolean;
+  onInstallApp?: () => void;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = ({ 
+  user,
+  onLogout,
   isLocalMode, 
   onPopulateMockData, 
   onResetData, 
   currency, 
-  setCurrency 
+  setCurrency,
+  isInstallable = false,
+  onInstallApp
 }) => {
   
   return (
@@ -42,6 +53,44 @@ const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Grid Layout */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
         
+        {/* Card: User Session details */}
+        {user && (
+          <div className="glass-card p-6 flex flex-col gap-5 animate-fade-in-up">
+            <h3 className="text-sm font-bold text-slate-300 tracking-wider uppercase border-b border-white/5 pb-3 flex items-center gap-2">
+              <User size={18} className="text-purple-400" />
+              Account Session
+            </h3>
+
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3.5 bg-white/3 border border-white/5 rounded-xl p-4">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20 uppercase text-lg">
+                  {user.slice(0, 2)}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[1.05rem] font-bold text-slate-100 truncate font-outfit">
+                    {user}
+                  </span>
+                  <span className="text-xs text-slate-400 font-inter">
+                    Logged in as member
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-[0.72rem] text-slate-500 font-inter leading-relaxed">
+                You are currently signed in. Rest assured, your data is securely isolated under your personal profile identifier.
+              </div>
+
+              <button 
+                onClick={onLogout}
+                className="btn-danger w-full justify-center gap-2 py-3 mt-1 hover:shadow-[0_4px_15px_rgba(239,68,68,0.25)]"
+              >
+                <LogOut size={16} />
+                Sign Out of Session
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Card 1: Configuration Preferences */}
         <div className="glass-card p-6 flex flex-col gap-5">
           <h3 className="text-sm font-bold text-slate-300 tracking-wider uppercase border-b border-white/5 pb-3 flex items-center gap-2">
@@ -160,6 +209,44 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                 Hard Reset Application Data
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Card 4: PWA App Installation */}
+        <div className="glass-card p-6 flex flex-col gap-5">
+          <h3 className="text-sm font-bold text-slate-300 tracking-wider uppercase border-b border-white/5 pb-3 flex items-center gap-2">
+            <Download size={18} className="text-purple-400" />
+            Install App on Device
+          </h3>
+
+          <div className="flex flex-col gap-4">
+            <p className="text-[0.72rem] text-slate-500 font-inter leading-relaxed">
+              Run My Finance Tracker as a standalone native application on your phone, tablet, or PC. This removes browser headers, enables local offline speed, and adds an app icon to your home screen.
+            </p>
+
+            {isInstallable ? (
+              <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-4 flex flex-col gap-3 transition-all duration-300 hover:border-emerald-500/25">
+                <div className="text-[0.88rem] font-bold text-emerald-400 flex items-center gap-1.5 font-outfit">
+                  <CheckCircle size={16} /> App Install Ready
+                </div>
+                <button
+                  onClick={onInstallApp}
+                  className="btn-primary justify-center gap-2 w-full hover:shadow-[0_4px_20px_rgba(168,85,247,0.35)]"
+                >
+                  <Download size={16} />
+                  Install App Natively
+                </button>
+              </div>
+            ) : (
+              <div className="bg-slate-950/40 border border-white/5 rounded-xl p-4 flex flex-col gap-2 font-inter">
+                <span className="text-[0.78rem] font-bold text-slate-300">How to Install manually:</span>
+                <ul className="text-[0.72rem] text-slate-400 list-disc pl-4 flex flex-col gap-1.5 leading-normal">
+                  <li><strong>On Chrome/Edge:</strong> Click the <strong className="text-purple-400">Install icon</strong> in your browser address bar.</li>
+                  <li><strong>On Android (Chrome):</strong> Open the menu and select <strong className="text-purple-400">"Install app"</strong>.</li>
+                  <li><strong>On iOS (Safari):</strong> Tap the share icon <strong className="text-purple-400">"Share"</strong> and select <strong className="text-purple-400">"Add to Home Screen"</strong>.</li>
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 

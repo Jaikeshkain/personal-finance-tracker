@@ -8,15 +8,18 @@ import {
   FileText, 
   Settings, 
   CreditCard,
-  Target
+  Target,
+  LogOut
 } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  user: string | null;
+  onLogout: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, user, onLogout }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'budget', label: 'Budget', icon: PiggyBank },
@@ -68,26 +71,54 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
         </nav>
       </div>
 
-      {/* Sidebar Promotional Card */}
-      <div className="bg-gradient-to-br from-indigo-950/40 to-slate-900/40 border border-purple-500/15 rounded-2xl p-5 flex flex-col gap-3 shadow-[inset_0_0_20px_rgba(124,58,237,0.05)] transition-all duration-300 hover:border-purple-500/25">
-        <div className="text-[0.9rem] font-medium leading-relaxed text-slate-100 font-outfit">
-          Discipline Today<br />
-          Freedom Tomorrow.
+      <div className="flex flex-col gap-4">
+        {/* Sidebar Promotional Card */}
+        <div className="bg-gradient-to-br from-indigo-950/40 to-slate-900/40 border border-purple-500/15 rounded-2xl p-5 flex flex-col gap-3 shadow-[inset_0_0_20px_rgba(124,58,237,0.05)] transition-all duration-300 hover:border-purple-500/25">
+          <div className="text-[0.9rem] font-medium leading-relaxed text-slate-100 font-outfit">
+            Discipline Today<br />
+            Freedom Tomorrow.
+          </div>
+          <div className="text-emerald-400 text-[0.85rem] font-semibold flex items-center gap-2 font-outfit">
+            <span className="inline-block width-[6px] height-[6px] rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse w-1.5 h-1.5"></span>
+            Stay consistent!
+          </div>
+          <div className="self-center mt-2 opacity-80 hover:opacity-100 transition-opacity duration-300">
+            {/* A plant leaf shape SVG */}
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 3C12 3 8 7 8 11C8 13.2091 9.79086 15 12 15C14.2091 15 16 13.2091 16 11C16 7 12 3 12 3Z" fill="#34d399" fillOpacity="0.2"/>
+              <path d="M12 3V21" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M12 11C13.5 9.5 16.5 9 18 10C18 10 17 12 14.5 12.5C13.5 12.7 12 12 12 12" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 14C10.5 12.5 7.5 12 6 13C6 13 7 15 9.5 15.5C10.5 15.7 12 15 12 15" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 7.5C13.2 6.5 15.5 6.2 16.5 7C16.5 7 15.8 8.5 14 8.8C13.2 9 12 8.5 12 8.5" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
         </div>
-        <div className="text-emerald-400 text-[0.85rem] font-semibold flex items-center gap-2 font-outfit">
-          <span className="inline-block width-[6px] height-[6px] rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse w-1.5 h-1.5"></span>
-          Stay consistent!
-        </div>
-        <div className="self-center mt-2 opacity-80 hover:opacity-100 transition-opacity duration-300">
-          {/* A plant leaf shape SVG */}
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 3C12 3 8 7 8 11C8 13.2091 9.79086 15 12 15C14.2091 15 16 13.2091 16 11C16 7 12 3 12 3Z" fill="#34d399" fillOpacity="0.2"/>
-            <path d="M12 3V21" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round"/>
-            <path d="M12 11C13.5 9.5 16.5 9 18 10C18 10 17 12 14.5 12.5C13.5 12.7 12 12 12 12" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M12 14C10.5 12.5 7.5 12 6 13C6 13 7 15 9.5 15.5C10.5 15.7 12 15 12 15" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M12 7.5C13.2 6.5 15.5 6.2 16.5 7C16.5 7 15.8 8.5 14 8.8C13.2 9 12 8.5 12 8.5" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
+
+        {/* User Profile Card */}
+        {user && (
+          <div className="bg-white/3 border border-white/5 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-[0_4px_15px_rgba(0,0,0,0.2)] backdrop-blur-sm transition-all duration-300 hover:border-white/10">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-md shadow-purple-500/20 uppercase flex-shrink-0 text-xs">
+                {user.slice(0, 2)}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-bold text-slate-100 truncate font-outfit">
+                  {user}
+                </span>
+                <span className="text-[0.62rem] text-slate-400 font-inter">
+                  Active Session
+                </span>
+              </div>
+            </div>
+            <button 
+              onClick={onLogout}
+              className="w-7 h-7 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 flex items-center justify-center text-red-400 transition-all duration-300 cursor-pointer shadow-sm hover:scale-105 animate-pulse"
+              title="Log Out"
+            >
+              <LogOut size={12} />
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

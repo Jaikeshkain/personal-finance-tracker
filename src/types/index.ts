@@ -23,6 +23,7 @@ export interface Fund {
 }
 
 export interface MonthlyFinanceData {
+  username?: string;
   monthYear: string;
   income: number;
   categories: Category[];

@@ -8,6 +8,7 @@ import ExpensesView from '@/components/ExpensesView';
 import SavingsView from '@/components/SavingsView';
 import ReportsView from '@/components/ReportsView';
 import SettingsView from '@/components/SettingsView';
+import LoginView from '@/components/LoginView';
 import { getStarterData } from '@/lib/initialData';
 import { 
   Loader2, 
@@ -24,6 +25,10 @@ import { MonthlyFinanceData, Expense, Fund } from '@/types';
 export default function Home() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [currency, setCurrency] = useState<string>('₹');
+  
+  // User Authentication States
+  const [user, setUser] = useState<string | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
   
   // Scroll Tracking States
   const [scrollProgress, setScrollProgress] = useState<number>(0);
@@ -86,12 +91,56 @@ export default function Home() {
   // Local Database Cache (holding all months)
   const [localDatabase, setLocalDatabase] = useState<Record<string, MonthlyFinanceData>>({});
 
-  // Initialize and check connection
+  // PWA Install State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User installation prompt selection: ${outcome}`);
+    setDeferredPrompt(null);
+    setIsInstallable(false);
+  };
+
+  const handleLogout = async () => {
+    localStorage.removeItem('auth_user_session');
+    setUser(null);
+
+    if (!isLocalMode) {
+      try {
+        await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'logout' })
+        });
+      } catch (e) {
+        console.error('Failed remote logout:', e);
+      }
+    }
+  };
+
+  // Initialize user auth state and check DB connection
   useEffect(() => {
     // Read local storage settings
     const cachedCurrency = localStorage.getItem('currency_pref');
     if (cachedCurrency) setCurrency(cachedCurrency);
-
+ 
     const cachedDB = localStorage.getItem('local_finance_db');
     if (cachedDB) {
       try {
@@ -100,17 +149,61 @@ export default function Home() {
         console.error('Failed to parse local cached DB', e);
       }
     }
+ 
+    // Quick connection check to determine isLocalMode
+    const checkConnectionAndSession = async () => {
+      let isLocal = true;
+      try {
+        const res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'check' })
+        });
+        const data = await res.json();
+        isLocal = !!data.isLocalMode;
+        setIsLocalMode(isLocal);
+      } catch (e) {
+        setIsLocalMode(true);
+      }
+ 
+      // Check persisted user session
+      const cachedUser = localStorage.getItem('auth_user_session');
+      if (cachedUser) {
+        setUser(cachedUser);
+      }
+      setIsCheckingAuth(false);
+    };
+ 
+    checkConnectionAndSession();
+ 
+    // Register service worker for Progressive Web App capabilities
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(
+          (registration) => {
+            console.log('PWA ServiceWorker registered with scope:', registration.scope);
+          },
+          (err) => {
+            console.error('PWA ServiceWorker registration failed:', err);
+          }
+        );
+      });
+    }
   }, []);
 
-  // Fetch data whenever monthYear changes
+  // Fetch data whenever monthYear or user changes
   useEffect(() => {
+    if (!user) return; // Wait until authenticated
+
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/finance?monthYear=${activeMonthYear}`);
+        const res = await fetch(`/api/finance?monthYear=${activeMonthYear}&username=${user}`);
         const result = await res.json();
         
         setIsLocalMode(result.isLocalMode);
+
+        const cacheKey = `${user}_${activeMonthYear}`;
 
         if (result.isLocalMode) {
           // Local Mode fallback: Read from localStorage or initial template
@@ -124,15 +217,15 @@ export default function Home() {
             }
           }
           
-          if (currentDb[activeMonthYear]) {
-            setActiveData(currentDb[activeMonthYear]);
+          if (currentDb[cacheKey]) {
+            setActiveData(currentDb[cacheKey]);
           } else {
             // No record for this month in local storage, use starter template
-            const starter = getStarterData(activeMonthYear);
+            const starter = { ...getStarterData(activeMonthYear), username: user };
             setActiveData(starter);
             
             // Save it in local DB
-            currentDb[activeMonthYear] = starter;
+            currentDb[cacheKey] = starter;
             setLocalDatabase(currentDb);
             localStorage.setItem('local_finance_db', JSON.stringify(currentDb));
           }
@@ -143,7 +236,7 @@ export default function Home() {
           // Mirror in localStorage cache
           const dbStr = localStorage.getItem('local_finance_db');
           let currentDb: Record<string, MonthlyFinanceData> = dbStr ? JSON.parse(dbStr) : {};
-          currentDb[activeMonthYear] = result.data;
+          currentDb[cacheKey] = result.data;
           setLocalDatabase(currentDb);
           localStorage.setItem('local_finance_db', JSON.stringify(currentDb));
         }
@@ -160,7 +253,8 @@ export default function Home() {
             console.error(e);
           }
         }
-        const cached = currentDb[activeMonthYear] || getStarterData(activeMonthYear);
+        const cacheKey = `${user}_${activeMonthYear}`;
+        const cached = currentDb[cacheKey] || { ...getStarterData(activeMonthYear), username: user };
         setActiveData(cached);
       } finally {
         setIsLoading(false);
@@ -169,22 +263,24 @@ export default function Home() {
 
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeMonthYear]);
+  }, [activeMonthYear, user]);
 
   // Save changes (from children controllers)
   const handleSaveData = async (updatedFields: Partial<MonthlyFinanceData>) => {
-    if (!activeData) return;
+    if (!activeData || !user) return;
     
     const updated = {
       ...activeData,
-      ...updatedFields
+      ...updatedFields,
+      username: user
     } as MonthlyFinanceData;
 
     // Optimistic local update
     setActiveData(updated);
+    const cacheKey = `${user}_${activeMonthYear}`;
     const newDb = {
       ...localDatabase,
-      [activeMonthYear]: updated
+      [cacheKey]: updated
     };
     setLocalDatabase(newDb);
     localStorage.setItem('local_finance_db', JSON.stringify(newDb));
@@ -333,11 +429,15 @@ export default function Home() {
       case 'settings':
         return (
           <SettingsView 
+            user={user}
+            onLogout={handleLogout}
             isLocalMode={isLocalMode}
             onPopulateMockData={handlePopulateMockData}
             onResetData={handleResetData}
             currency={currency}
             setCurrency={handleCurrencyChange}
+            isInstallable={isInstallable}
+            onInstallApp={handleInstallApp}
           />
         );
       default:
@@ -353,6 +453,27 @@ export default function Home() {
     { id: 'reports', label: 'Reports', icon: FileText },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];
+
+  if (isCheckingAuth) {
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg-app text-slate-400 gap-3 font-outfit z-50">
+        <Loader2 size={40} className="animate-spin text-purple-500" />
+        <span className="text-[0.95rem] tracking-wide">Checking session authorization...</span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <LoginView 
+        onLoginSuccess={(username) => {
+          setUser(username);
+          localStorage.setItem('auth_user_session', username);
+        }} 
+        isLocalMode={isLocalMode} 
+      />
+    );
+  }
 
   return (
     <div className="app-container flex-col lg:flex-row">
@@ -373,18 +494,28 @@ export default function Home() {
         <span className="text-xl font-black bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent font-outfit uppercase tracking-wider">
           My Finance
         </span>
-        <div className={`flex items-center gap-1.5 text-[0.68rem] font-bold px-2.5 py-1 rounded-full border ${
-          isLocalMode 
-            ? 'text-amber-400 bg-amber-500/5 border-amber-500/15' 
-            : 'text-emerald-400 bg-emerald-500/5 border-emerald-500/15'
-        }`}>
-          <Database size={10} />
-          <span>{isLocalMode ? 'LOCAL STORAGE' : 'MONGO SYNCED'}</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-white/5 px-2.5 py-1 rounded-full border border-white/5">
+            <div className="w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center text-[0.55rem] font-bold text-white uppercase">
+              {user.slice(0, 2)}
+            </div>
+            <span className="text-[0.7rem] font-medium text-slate-300 truncate max-w-[70px]">
+              {user}
+            </span>
+          </div>
+          <div className={`flex items-center gap-1.5 text-[0.68rem] font-bold px-2 py-1 rounded-full border ${
+            isLocalMode 
+              ? 'text-amber-400 bg-amber-500/5 border-amber-500/15' 
+              : 'text-emerald-400 bg-emerald-500/5 border-emerald-500/15'
+          }`}>
+            <Database size={10} />
+            <span>{isLocalMode ? 'LOCAL' : 'MONGO'}</span>
+          </div>
         </div>
       </header>
 
       {/* Sidebar Navigation */}
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onLogout={handleLogout} />
 
       {/* Main Panel View */}
       <main 

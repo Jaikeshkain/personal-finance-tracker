@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import dbConnect, { MONGODB_URI } from '@/lib/mongodb';
 import MonthlyFinance from '@/lib/models';
 import { getStarterData } from '@/lib/initialData';
@@ -7,9 +8,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const monthYear = searchParams.get('monthYear'); // e.g. "2026-06"
+    const username = searchParams.get('username')?.trim().toLowerCase();
 
-    if (!monthYear) {
-      return NextResponse.json({ error: 'monthYear query parameter is required' }, { status: 400 });
+    if (!monthYear || !username) {
+      return NextResponse.json({ error: 'monthYear and username query parameters are required' }, { status: 400 });
     }
 
     // Check if database is configured
@@ -22,13 +24,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Connected Mode: Verify HTTP-only cookie to authenticate request username
+    const cookieStore = await cookies();
+    const authUser = cookieStore.get('auth_user')?.value;
+    if (!authUser || authUser !== username) {
+      return NextResponse.json({ error: 'Unauthorized access. Authentication is required.' }, { status: 401 });
+    }
+
     await dbConnect();
     
-    let record = await MonthlyFinance.findOne({ monthYear });
+    let record = await MonthlyFinance.findOne({ username, monthYear });
     
     if (!record) {
       // Create a default record for this month if it doesn't exist
-      const starter = getStarterData(monthYear);
+      const starter = { ...getStarterData(monthYear), username };
       record = await MonthlyFinance.create(starter);
     }
 
@@ -53,11 +62,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { monthYear, income, categories, expenses, funds } = body;
+    const { username, monthYear, income, categories, expenses, funds } = body;
 
-    if (!monthYear) {
-      return NextResponse.json({ error: 'monthYear is required' }, { status: 400 });
+    if (!monthYear || !username) {
+      return NextResponse.json({ error: 'monthYear and username are required' }, { status: 400 });
     }
+
+    const cleanUsername = username.trim().toLowerCase();
 
     if (!MONGODB_URI) {
       return NextResponse.json({ 
@@ -66,12 +77,20 @@ export async function POST(request: NextRequest) {
       }, { status: 200 });
     }
 
+    // Connected Mode: Verify HTTP-only cookie matches body username
+    const cookieStore = await cookies();
+    const authUser = cookieStore.get('auth_user')?.value;
+    if (!authUser || authUser !== cleanUsername) {
+      return NextResponse.json({ error: 'Unauthorized access. Authentication is required.' }, { status: 401 });
+    }
+
     await dbConnect();
 
-    // Upsert the record for the specific month-year
+    // Upsert the record for the specific username and month-year
     const updatedRecord = await MonthlyFinance.findOneAndUpdate(
-      { monthYear },
+      { username: cleanUsername, monthYear },
       { 
+        username: cleanUsername,
         monthYear, 
         income, 
         categories, 
