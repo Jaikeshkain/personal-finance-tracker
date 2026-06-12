@@ -167,9 +167,10 @@ export default function Home() {
       }
     }
  
-    // Quick connection check to determine isLocalMode
+    // Quick connection check to determine isLocalMode and session status
     const checkConnectionAndSession = async () => {
       let isLocal = true;
+      let sessionUser: string | null = null;
       try {
         const res = await fetch('/api/auth', {
           method: 'POST',
@@ -179,14 +180,26 @@ export default function Home() {
         const data = await res.json();
         isLocal = !!data.isLocalMode;
         setIsLocalMode(isLocal);
+        sessionUser = data.sessionUser || null;
       } catch (e) {
         setIsLocalMode(true);
       }
  
       // Check persisted user session
       const cachedUser = localStorage.getItem('auth_user_session');
-      if (cachedUser) {
-        setUser(cachedUser);
+      if (isLocal) {
+        if (cachedUser) {
+          setUser(cachedUser);
+        }
+      } else {
+        if (sessionUser) {
+          setUser(sessionUser);
+          localStorage.setItem('auth_user_session', sessionUser);
+        } else {
+          // Stale session or cookie expired: force logout on client
+          setUser(null);
+          localStorage.removeItem('auth_user_session');
+        }
       }
       setIsCheckingAuth(false);
     };
@@ -226,7 +239,16 @@ export default function Home() {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/finance?monthYear=${activeMonthYear}&username=${user}`);
+        const res = await fetch(`/api/finance?monthYear=${activeMonthYear}&username=${user}&_t=${Date.now()}`);
+        
+        if (res.status === 401) {
+          // HTTP-Only session expired or is invalid! Clear client session
+          localStorage.removeItem('auth_user_session');
+          setUser(null);
+          showToast("Session expired. Please log in again.", "error");
+          return;
+        }
+
         const result = await res.json();
         
         setIsLocalMode(result.isLocalMode);
@@ -248,8 +270,69 @@ export default function Home() {
           if (currentDb[cacheKey]) {
             setActiveData(currentDb[cacheKey]);
           } else {
-            // No record for this month in local storage, use starter template
-            const starter = { ...getStarterData(activeMonthYear), username: user };
+            // Find the most recent record for this user in local storage to carry over
+            const userPrefix = `${user}_`;
+            let prevKeys = Object.keys(currentDb)
+              .filter(k => k.startsWith(userPrefix))
+              .map(k => k.substring(userPrefix.length)) // gets YYYY-MM
+              .filter(m => m < activeMonthYear)
+              .sort((a, b) => b.localeCompare(a)); // sort descending
+
+            let starter;
+            if (prevKeys.length > 0) {
+              const prevData = currentDb[`${user}_${prevKeys[0]}`];
+              starter = {
+                username: user,
+                monthYear: activeMonthYear,
+                income: prevData.income,
+                categories: prevData.categories.map(c => ({
+                  id: c.id,
+                  name: c.name,
+                  budget: c.budget,
+                  type: c.type,
+                  color: c.color
+                })),
+                expenses: [],
+                funds: prevData.funds ? prevData.funds.map(f => ({
+                  id: f.id,
+                  name: f.name,
+                  target: f.target,
+                  current: f.current
+                })) : []
+              };
+            } else {
+              // Try to fallback to non-prefixed legacy keys (e.g. YYYY-MM)
+              const fallbackKeys = Object.keys(currentDb)
+                .filter(k => /^\d{4}-\d{2}$/.test(k))
+                .filter(m => m < activeMonthYear)
+                .sort((a, b) => b.localeCompare(a));
+
+              if (fallbackKeys.length > 0) {
+                const prevData = currentDb[fallbackKeys[0]];
+                starter = {
+                  username: user,
+                  monthYear: activeMonthYear,
+                  income: prevData.income,
+                  categories: prevData.categories.map(c => ({
+                    id: c.id,
+                    name: c.name,
+                    budget: c.budget,
+                    type: c.type,
+                    color: c.color
+                  })),
+                  expenses: [],
+                  funds: prevData.funds ? prevData.funds.map(f => ({
+                    id: f.id,
+                    name: f.name,
+                    target: f.target,
+                    current: f.current
+                  })) : []
+                };
+              } else {
+                starter = { ...getStarterData(activeMonthYear), username: user };
+              }
+            }
+            
             setActiveData(starter);
             
             // Save it in local DB
@@ -282,7 +365,70 @@ export default function Home() {
           }
         }
         const cacheKey = `${user}_${activeMonthYear}`;
-        const cached = currentDb[cacheKey] || { ...getStarterData(activeMonthYear), username: user };
+        
+        let cached = currentDb[cacheKey];
+        if (!cached) {
+          const userPrefix = `${user}_`;
+          let prevKeys = Object.keys(currentDb)
+            .filter(k => k.startsWith(userPrefix))
+            .map(k => k.substring(userPrefix.length))
+            .filter(m => m < activeMonthYear)
+            .sort((a, b) => b.localeCompare(a));
+
+          if (prevKeys.length > 0) {
+            const prevData = currentDb[`${user}_${prevKeys[0]}`];
+            cached = {
+              username: user,
+              monthYear: activeMonthYear,
+              income: prevData.income,
+              categories: prevData.categories.map(c => ({
+                id: c.id,
+                name: c.name,
+                budget: c.budget,
+                type: c.type,
+                color: c.color
+              })),
+              expenses: [],
+              funds: prevData.funds ? prevData.funds.map(f => ({
+                id: f.id,
+                name: f.name,
+                target: f.target,
+                current: f.current
+              })) : []
+            };
+          } else {
+            // Try to fallback to non-prefixed legacy keys (e.g. YYYY-MM)
+            const fallbackKeys = Object.keys(currentDb)
+              .filter(k => /^\d{4}-\d{2}$/.test(k))
+              .filter(m => m < activeMonthYear)
+              .sort((a, b) => b.localeCompare(a));
+
+            if (fallbackKeys.length > 0) {
+              const prevData = currentDb[fallbackKeys[0]];
+              cached = {
+                username: user,
+                monthYear: activeMonthYear,
+                income: prevData.income,
+                categories: prevData.categories.map(c => ({
+                  id: c.id,
+                  name: c.name,
+                  budget: c.budget,
+                  type: c.type,
+                  color: c.color
+                })),
+                expenses: [],
+                funds: prevData.funds ? prevData.funds.map(f => ({
+                  id: f.id,
+                  name: f.name,
+                  target: f.target,
+                  current: f.current
+                })) : []
+              };
+            } else {
+              cached = { ...getStarterData(activeMonthYear), username: user };
+            }
+          }
+        }
         setActiveData(cached);
       } finally {
         setIsLoading(false);
@@ -382,11 +528,12 @@ export default function Home() {
       localStorage.removeItem('local_finance_db');
       setLocalDatabase({});
       
-      const starter = getStarterData(activeMonthYear);
+      const starter = { ...getStarterData(activeMonthYear), username: user || 'guest' };
       setActiveData(starter);
       
-      // Save blank starter
-      const db = { [activeMonthYear]: starter };
+      // Save blank starter using Cache Key
+      const cacheKey = `${user || 'guest'}_${activeMonthYear}`;
+      const db = { [cacheKey]: starter };
       setLocalDatabase(db);
       localStorage.setItem('local_finance_db', JSON.stringify(db));
 
@@ -412,17 +559,25 @@ export default function Home() {
     setLocalDatabase(backupObj);
     localStorage.setItem('local_finance_db', JSON.stringify(backupObj));
     
-    // Set active month data if found in uploader
-    if (backupObj[activeMonthYear]) {
+    // Set active month data if found in uploader (check cache key with user, or fallback)
+    const cacheKey = `${user || 'guest'}_${activeMonthYear}`;
+    if (backupObj[cacheKey]) {
+      setActiveData(backupObj[cacheKey]);
+    } else if (backupObj[activeMonthYear]) {
       setActiveData(backupObj[activeMonthYear]);
     } else {
       // Pick first available month from backup
-      const months = Object.keys(backupObj);
-      if (months.length > 0) {
-        const [bYear, bMonth] = months[0].split('-');
-        setYear(bYear);
-        setMonth(bMonth);
-        setActiveData(backupObj[months[0]]);
+      const keys = Object.keys(backupObj);
+      if (keys.length > 0) {
+        const firstKey = keys[0];
+        const monthYearPart = firstKey.includes('_') ? firstKey.split('_')[1] : firstKey;
+        const parts = monthYearPart.split('-');
+        if (parts.length === 2) {
+          const [bYear, bMonth] = parts;
+          setYear(bYear);
+          setMonth(bMonth);
+        }
+        setActiveData(backupObj[firstKey]);
       }
     }
     showToast("Backup imported successfully!", "success");

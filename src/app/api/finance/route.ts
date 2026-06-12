@@ -36,12 +36,56 @@ export async function GET(request: NextRequest) {
     let record = await MonthlyFinance.findOne({ username, monthYear });
     
     if (!record) {
-      // Create a default record for this month if it doesn't exist
-      const starter = { ...getStarterData(monthYear), username };
+      // Find the most recent record before this month to copy categories, income, and funds from
+      const prevRecords = await MonthlyFinance.find({
+        username,
+        monthYear: { $lt: monthYear }
+      })
+      .sort({ monthYear: -1 })
+      .limit(1);
+
+      const prevRecord = prevRecords.length > 0 ? prevRecords[0] : null;
+
+      let starter;
+      if (prevRecord) {
+        const copiedCategories = prevRecord.categories.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          budget: c.budget,
+          type: c.type,
+          color: c.color
+        }));
+
+        const copiedFunds = prevRecord.funds ? prevRecord.funds.map((f: any) => ({
+          id: f.id,
+          name: f.name,
+          target: f.target,
+          current: f.current
+        })) : [];
+
+        starter = {
+          username,
+          monthYear,
+          income: prevRecord.income,
+          categories: copiedCategories,
+          expenses: [], // new month starts with empty expenses
+          funds: copiedFunds
+        };
+      } else {
+        // Create a default record for this month if no previous record exists
+        starter = { ...getStarterData(monthYear), username };
+      }
+
       record = await MonthlyFinance.create(starter);
     }
 
-    return NextResponse.json({ isLocalMode: false, data: record });
+    return NextResponse.json({ isLocalMode: false, data: record }, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   } catch (error: any) {
     console.error('API GET Finance error:', error);
     
@@ -55,7 +99,14 @@ export async function GET(request: NextRequest) {
       error: error.message,
       message: 'MongoDB connection failed. Falling back to Local Storage Mode.',
       data: getStarterData(monthYear)
-    }, { status: 200 }); // We return 200 with isLocalMode so client can proceed
+    }, { 
+      status: 200,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    }); // We return 200 with isLocalMode so client can proceed
   }
 }
 

@@ -29,6 +29,17 @@ export async function POST(request: NextRequest) {
     await dbConnect();
     const cookieStore = await cookies();
 
+    // ACTION: CHECK (Connection & Session Check)
+    if (action === 'check') {
+      const authUser = cookieStore.get('auth_user')?.value || null;
+      return NextResponse.json({ 
+        success: true, 
+        isLocalMode: false,
+        sessionUser: authUser,
+        message: 'Connected to database' 
+      });
+    }
+
     // ACTION: LOGOUT
     if (action === 'logout') {
       cookieStore.delete('auth_user');
